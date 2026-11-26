@@ -11,8 +11,8 @@ enum AppearanceMode: String, CaseIterable {
     var title: String {
         switch self {
         case .system: return "跟随系统"
-        case .dark: return "扁平深色"
-        case .light: return "扁平浅色"
+        case .dark: return "深色毛玻璃"
+        case .light: return "浅色毛玻璃"
         }
     }
 
@@ -47,6 +47,13 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var isRefreshing: Bool = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var now: Date = Date()
+    @Published var isWindowFocused: Bool = false
+    @Published var isDesktopFocused: Bool = false
+    @Published var isHovered: Bool = false
+
+    var isVibrant: Bool {
+        isWindowFocused || isDesktopFocused || isHovered
+    }
 
     @Published var isPinnedOnTop: Bool {
         didSet {
@@ -82,6 +89,7 @@ final class UsageViewModel: ObservableObject {
     private var refreshTimer: Timer?
     private var clockTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
+    private var appActivateObserver: NSObjectProtocol?
 
     init() {
         self.isPinnedOnTop = defaults.bool(forKey: Keys.pinnedOnTop)
@@ -89,7 +97,7 @@ final class UsageViewModel: ObservableObject {
            let mode = AppearanceMode(rawValue: rawAppearance) {
             self.appearanceMode = mode
         } else {
-            self.appearanceMode = .system
+            self.appearanceMode = .dark
         }
         let savedInterval = defaults.integer(forKey: Keys.refreshInterval)
         self.refreshInterval = RefreshIntervalOption(rawValue: savedInterval) ?? .twoMinutes
@@ -102,6 +110,9 @@ final class UsageViewModel: ObservableObject {
         clockTimer?.invalidate()
         if let wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        if let appActivateObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(appActivateObserver)
         }
     }
 
@@ -151,6 +162,8 @@ final class UsageViewModel: ObservableObject {
     }
 
     private func setupObservers() {
+        updateDesktopFocusState(bundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
@@ -161,6 +174,23 @@ final class UsageViewModel: ObservableObject {
                 self?.refreshNow()
             }
         }
+
+        appActivateObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundleID = app?.bundleIdentifier
+            Task { @MainActor [weak self] in
+                self?.updateDesktopFocusState(bundleID: bundleID)
+            }
+        }
+    }
+
+    private func updateDesktopFocusState(bundleID: String?) {
+        let selfID = Bundle.main.bundleIdentifier
+        isDesktopFocused = (bundleID == "com.apple.finder" || (selfID != nil && bundleID == selfID))
     }
 
     private func restartRefreshTimer() {

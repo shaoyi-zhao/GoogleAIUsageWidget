@@ -54,10 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Window Setup
 
     private func setupWindow() {
-        let rootView = WidgetView(viewModel: viewModel)
+        let rootView = WidgetView(viewModel: viewModel) { [weak self] height in
+            self?.updateWindowHeight(height)
+        }
         let hostingView = NSHostingView(rootView: rootView)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         let fittingSize = hostingView.fittingSize
-        let initialRect = NSRect(origin: .zero, size: NSSize(width: 320, height: max(240, fittingSize.height)))
+        let initialRect = NSRect(origin: .zero, size: NSSize(width: 328, height: max(120, ceil(fittingSize.height))))
 
         let win = DesktopWidgetWindow(
             contentRect: initialRect,
@@ -77,6 +81,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyWindowLevel(isPinnedOnTop: viewModel.isPinnedOnTop)
         restoreOrPlaceDefaultPosition()
         win.orderFrontRegardless()
+    }
+
+    private func updateWindowHeight(_ height: CGFloat) {
+        guard let window, height > 0 else { return }
+        let targetHeight = ceil(height)
+        guard abs(window.frame.height - targetHeight) >= 0.5 else { return }
+        let newOriginY = window.frame.maxY - targetHeight
+        let newFrame = NSRect(
+            x: window.frame.origin.x,
+            y: newOriginY,
+            width: 328,
+            height: targetHeight
+        )
+        window.setFrame(newFrame, display: true)
     }
 
     private func applyWindowLevel(isPinnedOnTop: Bool) {
@@ -131,6 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window else { return }
         saveWindowOrigin(window.frame.origin)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        viewModel.isWindowFocused = true
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        viewModel.isWindowFocused = false
     }
 
     // MARK: - Status Bar Menu
